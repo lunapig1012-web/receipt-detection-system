@@ -1,0 +1,46 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editor settings
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Local runtime output
+runs/
+outputs/
+output/
+temp/
+tmp/
+
+# Internal workspace instructions
+codex_instruction
+
+# Local data that should not be published
+data/*
+!data/receipts/
+data/receipts/*
+!data/receipts/test_receipt.jpg
+
+# Logs and caches
+*.log
+.cache/
+
+# Environment secrets
+.env
+.env.*
+.streamlit/secrets.toml
+*.key

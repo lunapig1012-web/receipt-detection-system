@@ -1,0 +1,6 @@
+streamlit
+ultralytics
+easyocr
+pandas
+openpyxl
+Pillow
