@@ -1,6 +1,6 @@
 # プロジェクト状況
 
-最終更新日: 2026-08-16\
+最終更新日: 2026-09-06\
 プロジェクト名: `receipt-detection-system`\
 現在の段階: MVP 実装完了、プロジェクト凍結前の整合性確認中
 
@@ -143,7 +143,9 @@ Streamlit は YOLO の `imgsz` や confidence threshold を個別に指定せず
 -   Train: 100 枚
 -   Validation: 12 枚
 -   Test: 13 枚
--   現在の Roboflow データセット: version 3
+-   現在の Roboflow データセット: version 4
+-   Roboflow export: 1024 × 1024、アスペクト比を維持して padding
+-   アノテーション数: date 125、phone 125、total 122
 -   データセット内に記載されたライセンス: CC BY 4.0
 
 対象レシートの種類:
@@ -156,87 +158,80 @@ Streamlit は YOLO の `imgsz` や confidence threshold を個別に指定せず
 
 ## 8. YOLO 学習状況
 
-学習エントリーポイント:
+現在の正式モデルは `models/best.pt`（YOLO11n）である。
 
--   `docs/260810-receipts_detection_yolo11n_training.ipynb`
+学習ワークフロー:
 
-保存された notebook の学習コードで確認できる主な設定:
+-   `docs/260906-yolo11n-training-notebook-1024.ipynb`
+
+学習設定:
 
 -   Base model: `yolo11n.pt`
--   Training image size: 640
--   Epochs: 300
+-   Training image size: 1024
+-   Epochs requested: 300
 -   Batch size: 8
 -   Patience: 80
+-   Seed: 42
 -   Mosaic: 0.2
+-   Mixup / Cutmix: 0.0 / 0.0
+-   Degrees / Shear / Perspective: 0.0 / 0.0 / 0.0
 -   Translation: 0.05
 -   Scale: 0.2
--   Horizontal flip: 0.0
--   Vertical flip: 0.0
--   Seed: 42
+-   Horizontal flip / Vertical flip: 0.0 / 0.0
 
-保存された学習出力では、292 epoch で early stopping が実行され、best
-epoch は 212 と記録されている。
+245 epoch で学習を終了し、best epoch は 165 である。
 
-notebook に保存されている validation split の全クラス指標:
+### Training Validation Metrics
 
-  指標             値
-  ----------- -------
-  Precision     0.980
-  Recall        0.957
-  mAP50         0.991
-  mAP50-95      0.703
+評価条件は `validation` split、12 images / 36 instances、`imgsz=1024` である。
 
-これらは `imgsz=640` の validation split
-指標であり、現在のデプロイ条件における test split 指標ではない。
+| 指標 | 値 |
+|---|---:|
+| Precision | 0.993 |
+| Recall | 1.000 |
+| mAP50 | 0.995 |
+| mAP50-95 | 0.731 |
 
-ローカルの `models/best.pt` は、
-`docs/training_results/phase1_yolo11n_training_artifacts.zip` 内の
-`best.pt` と SHA-256 が一致している。
+これらは学習後の validation 指標であり、独立した test benchmark ではない。
 
-## 9. Test Split Evaluation の状況
+学習記録は `docs/training_results/yolo11n_1024/` に保存している。
+同ディレクトリの `yolo11n_1024_training_artifacts.zip` 内の `best.pt` と、
+正式な `models/best.pt` の SHA256 は一致している。
 
-正式な deployment configuration による test split evaluation
-を実行済み。
+## 9. Test Benchmark の状況
+
+現在の正式モデルの独立した test benchmark を実行済み。
 
 評価条件:
 
 -   状態: 完了
 -   実行環境: Kaggle
--   `split=test`
+-   Split: `test`
+-   Images / Instances: 13 / 38
 -   `imgsz=1024`
--   `conf=0.5`
--   model: `models/best.pt`
+-   Confidence: Ultralytics validation default（`conf` の明示指定なし）
+-   Model: `models/best.pt`
 
-Kaggle evaluation artifact:
+使用モデル SHA256:
 
-``` text
-test_1024_conf_0_5_evaluation_artifacts.zip
+```text
+a450a8d56e6230e1e3ee598906a07815ea3b847f986d6af17a6c036629ed6ca4
 ```
 
-使用モデル SHA-256:
+### Test Benchmark Results
 
-``` text
-f8a443ac6654a9dfcff0863f3177139175a6bbefd0e9955c12220e9dd5cef369
-```
+| 指標 | 値 |
+|---|---:|
+| Precision | 0.9411 |
+| Recall | 0.9496 |
+| mAP50 | 0.9686 |
+| mAP50-95 | 0.6240 |
 
-### Deployment Evaluation Results
+評価図: `docs/evaluation_results/test_benchmark_1024/`
 
-Overall metrics:
-
-  指標             値
-  ----------- -------
-  Precision     0.953
-  Recall        0.944
-  mAP50         0.962
-  mAP50-95      0.709
-
-Per-class metrics:
-
-  Class     Precision   Recall   mAP50   mAP50-95
-  ------- ----------- -------- ------- ----------
-  date          0.899    0.917   0.901      0.698
-  phone         0.989    1.000   0.995      0.736
-  total         0.973    0.917   0.989      0.693
+benchmark はモデル性能の評価である。アプリケーションでは別途
+`deploy_config.json` の `imgsz=1024`、`conf_threshold=0.5` を使用して
+低 confidence の予測を除外する。benchmark にこの deployment threshold は適用していない。
 
 ## 10. OCR 処理
 
@@ -340,8 +335,7 @@ output/excel/receipt_results.xlsx
 -   [x] YOLO → ROI OCR → Amount Parser の主処理を実装
 -   [x] Streamlit の手動機能確認
 -   [x] Excel 出力の手動確認
--   [x] `imgsz=1024`, `conf_threshold=0.5` で test split evaluation
-    を実行
+-   [x] `imgsz=1024`、Ultralytics validation default で独立した test benchmark を実行
 -   [x] test split の Precision / Recall / mAP を保存
 -   [ ] notebook のモデルパスと実行順序を整理
 -   [ ] notebook の Colab / Kaggle 記述を統一

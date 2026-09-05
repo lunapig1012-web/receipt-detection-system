@@ -27,8 +27,9 @@ Streamlit confirmation → Excel export
 
 Current dataset:
 
--   125 Japanese receipt images
+-   125 self-collected Japanese receipt images
 -   One receipt per image
+-   Roboflow export: 1024 × 1024, aspect ratio preserved with padding
 -   Receipt categories:
     -   Restaurant
     -   Supermarket
@@ -81,9 +82,9 @@ overfitting risk.
 
 ## 5. Image Resolution
 
-Recommended training image size:
+Current official training image size:
 
-    imgsz = 640
+    imgsz = 1024
 
 Reason:
 
@@ -101,9 +102,14 @@ Higher resolution preserves more information for field localization.
 
 ## 6. Training Epochs
 
-Recommended:
+Current official training configuration:
 
     epochs = 300
+    patience = 80
+    seed = 42
+
+The requested epoch count is 300. Training stopped at epoch 245;
+the best epoch was 165. The official model is `models/best.pt`.
 
 Reason:
 
@@ -111,13 +117,13 @@ The dataset is small.
 
 More epochs allow the model to repeatedly learn receipt layouts.
 
-Early stopping should still be enabled to avoid unnecessary overfitting.
+Early stopping was enabled with patience 80.
 
 ------------------------------------------------------------------------
 
 ## 7. Batch Size
 
-Recommended:
+Current official batch size:
 
     batch size = 8
 
@@ -125,8 +131,7 @@ Reason:
 
 Higher image resolution requires more GPU memory.
 
-A smaller batch provides stable training under Colab environment
-limitations.
+A smaller batch limits GPU memory use during training.
 
 ------------------------------------------------------------------------
 
@@ -195,9 +200,9 @@ Because the dataset is small:
 
 Dataset split:
 
--   Train: 80%
--   Validation: 10%
--   Test: 10%
+-   Train: 100 images (80%)
+-   Validation: 12 images (9.6%)
+-   Test: 13 images (10.4%)
 
 Evaluation focuses on:
 
@@ -207,6 +212,34 @@ Evaluation focuses on:
 
 The most important metric is total field detection because it directly
 affects expense amount extraction.
+
+### Current Training Validation Results
+
+Validation split: 12 images / 36 instances, imgsz=1024.
+These are validation metrics, not independent test benchmark metrics.
+
+| Metric | Value |
+|---|---:|
+| Precision | 0.993 |
+| Recall | 1.000 |
+| mAP50 | 0.995 |
+| mAP50-95 | 0.731 |
+
+### Formal Independent Test Benchmark
+
+Test split: 13 images / 38 instances, imgsz=1024.
+The benchmark uses the Ultralytics validation default confidence setting.
+
+| Metric | Value |
+|---|---:|
+| Precision | 0.9411 |
+| Recall | 0.9496 |
+| mAP50 | 0.9686 |
+| mAP50-95 | 0.6240 |
+
+Application deployment separately uses `models/best.pt`, imgsz=1024,
+and conf_threshold=0.5. This deployment filter is not the benchmark
+confidence setting.
 
 ------------------------------------------------------------------------
 

@@ -1,0 +1,22 @@
+{
+  "run_name": "receipt_yolo11n_1024",
+  "model": "yolo11n",
+  "imgsz": 1024,
+  "epochs_requested": 300,
+  "epochs_completed": 245,
+  "best_epoch": 165,
+  "batch": 8,
+  "patience": 80,
+  "seed": 42,
+  "classes": [
+    "date",
+    "phone",
+    "total"
+  ],
+  "validation_metrics": {
+    "precision": 0.993,
+    "recall": 1.0,
+    "mAP50": 0.995,
+    "mAP50-95": 0.731
+  }
+}

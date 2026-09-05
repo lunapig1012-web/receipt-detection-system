@@ -31,6 +31,9 @@ def initialize_session_state() -> None:
         "current_step": 1,
         "current_file_hash": "",
         "current_image_path": "",
+        "receipts": [],
+        "next_receipt_id": 1,
+        "receipt_uploader_version": 0,
         "analysis_result": {},
         "merchant_name": "",
         "tax_rate": 10,
@@ -143,6 +146,12 @@ def get_amount_display(analysis_result: Dict[str, Any]) -> str:
     return format_yen_symbol(get_amount_value(analysis_result))
 
 
+def get_receipt_total_value(receipt: Dict[str, Any]) -> int:
+    total_text = str(receipt.get("total", "")).strip()
+    digits = "".join(character for character in total_text if character.isdigit())
+    return to_int_or_zero(digits)
+
+
 def normalize_display_text(value: Any) -> str:
     # 認識結果由来の余分な空白を取り除く
     return str(value or "").replace(" ", "").strip()
@@ -192,6 +201,7 @@ def apply_page_style() -> None:
 
             .stepper-card {
                 margin-top: 0.15rem;
+                margin-bottom: 1.25rem;
                 padding: 0.8rem 0.95rem 0.95rem;
                 border-radius: 18px;
                 border: 1px solid #e5e7eb;
@@ -280,14 +290,14 @@ def apply_page_style() -> None:
                 font-size: 0.9rem;
                 font-weight: 700;
                 color: #111827;
-                margin-bottom: 0.2rem;
+                margin-bottom: 0.45rem;
             }
 
             .panel-text {
                 color: #6b7280;
                 font-size: 0.78rem;
                 line-height: 1.5;
-                margin-bottom: 0.6rem;
+                margin-bottom: 0.9rem;
             }
 
             .upload-hint {
@@ -302,7 +312,14 @@ def apply_page_style() -> None:
             }
 
             .readonly-field {
-                padding: 0.78rem 0;
+                padding: 0.95rem 0;
+                border-bottom: 1px solid #edf0f3;
+            }
+
+            .upload-file-row {
+                margin-top: 1.1rem;
+                margin-bottom: 0.55rem;
+                padding: 0.55rem 0.65rem;
                 border-bottom: 1px solid #edf0f3;
             }
 
@@ -342,6 +359,11 @@ def apply_page_style() -> None:
                 padding: 1rem;
             }
 
+            .st-key-page_1_preview_card .preview-box {
+                min-height: 374px;
+                margin-bottom: 16px;
+            }
+
             .preview-box .preview-icon {
                 font-size: 2.45rem;
                 margin-bottom: 0.5rem;
@@ -364,7 +386,7 @@ def apply_page_style() -> None:
                 border-radius: 18px;
                 background: #ffffff;
                 box-shadow: none;
-                padding: 0.95rem 0.95rem 0.9rem 0.95rem;
+                padding: 1.15rem 1.1rem 1.05rem 1.1rem;
             }
 
             div[data-testid="stButton"] > button {
@@ -418,6 +440,42 @@ def apply_page_style() -> None:
             div[data-testid="stFileUploaderDropzone"] button:hover {
                 background: #0f172a;
                 border-color: #0f172a;
+            }
+
+            .st-key-upload-control-area {
+                position: relative;
+            }
+
+            .st-key-clear_uploaded_receipts div[data-testid="stButton"] {
+                position: static;
+                display: flex;
+                justify-content: center;
+            }
+
+            .st-key-clear_uploaded_receipts button[data-testid="stBaseButton-secondary"] {
+                min-width: 2.5rem !important;
+                width: 2.5rem !important;
+                max-width: 2.5rem !important;
+                height: 2.5rem !important;
+                min-height: 2.5rem !important;
+                max-height: 2.5rem !important;
+                aspect-ratio: 1 / 1;
+                box-sizing: border-box;
+                padding: 0 !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                border-radius: 0.35rem;
+                font-size: 1rem;
+                line-height: 1 !important;
+                margin: 0 auto;
+            }
+
+            .st-key-clear_uploaded_receipts button[data-testid="stBaseButton-secondary"] p {
+                margin: 0 !important;
+                padding: 0 !important;
+                line-height: 1 !important;
+                width: auto !important;
             }
 
             .upload-hero {
@@ -535,9 +593,43 @@ def ensure_image_loaded(uploaded_file: Any) -> Path:
     return image_path
 
 
+def sync_uploaded_receipts(uploaded_files: list[Any]) -> None:
+    """Append newly uploaded files while preserving order and receipt identity."""
+    existing_hashes = {receipt["file_hash"] for receipt in st.session_state.receipts}
+    for uploaded_file in uploaded_files:
+        file_hash = get_file_hash(uploaded_file)
+        if file_hash in existing_hashes:
+            continue
+        image_path = save_uploaded_file(uploaded_file, file_hash)
+        receipt_id = f"receipt_{st.session_state.next_receipt_id}"
+        st.session_state.next_receipt_id += 1
+        st.session_state.receipts.append(
+            {
+                "id": receipt_id,
+                "file_hash": file_hash,
+                "original_image_path": str(image_path),
+                "detection_image_path": "",
+                "analysis_result": {},
+            }
+        )
+        existing_hashes.add(file_hash)
+
+    if st.session_state.receipts:
+        first_receipt = st.session_state.receipts[0]
+        st.session_state.current_file_hash = first_receipt["file_hash"]
+        st.session_state.current_image_path = first_receipt["original_image_path"]
+
+
+def clear_uploaded_receipts() -> None:
+    st.session_state.receipts = []
+    st.session_state.current_file_hash = ""
+    st.session_state.current_image_path = ""
+    st.session_state.receipt_uploader_version += 1
+
+
 def render_preview_image(image_path: Path, caption: str) -> None:
     # プレビュー画像を表示する
-    st.image(image_path, caption=caption, use_container_width=True)
+    st.image(image_path, caption=caption, width=260)
 
 
 def render_placeholder_preview() -> None:
@@ -563,7 +655,7 @@ def render_readonly_field(label: str, value: str, emphasis: bool = False) -> Non
 
 def render_step_1() -> None:
     # 1段階目: レシート画像をアップロードする
-    uploaded_file = None
+    uploaded_files: list[Any] = []
 
     left_column, right_column = st.columns([1.0, 1.0], gap="large")
 
@@ -575,33 +667,58 @@ def render_step_1() -> None:
                 '<div class="upload-hero-copy">AIが自動で情報を抽出します。</div></div>',
                 unsafe_allow_html=True,
             )
-            uploaded_file = st.file_uploader(
-                "画像をアップロード",
-                type=UPLOAD_TYPES,
-                accept_multiple_files=False,
-                label_visibility="collapsed",
-            )
+            with st.container(key="upload_control_area"):
+                uploaded_files = st.file_uploader(
+                    "画像をアップロード",
+                    type=UPLOAD_TYPES,
+                    accept_multiple_files=True,
+                    key=f"receipt_uploader_{st.session_state.receipt_uploader_version}",
+                    label_visibility="collapsed",
+                )
+                clear_left, clear_center, clear_right = st.columns([1.0, 0.18, 1.0])
+                with clear_center:
+                    if st.button(
+                        "×",
+                        key="clear_uploaded_receipts",
+                        type="secondary",
+                        help="選択した画像をすべてクリア",
+                    ):
+                        clear_uploaded_receipts()
+                        st.rerun()
+            if not uploaded_files and st.session_state.receipts:
+                clear_uploaded_receipts()
+                st.rerun()
             st.markdown("<div class='upload-hint'>またはドラッグ＆ドロップ</div>", unsafe_allow_html=True)
 
-            analyze_disabled = uploaded_file is None
+            if uploaded_files:
+                sync_uploaded_receipts(uploaded_files)
+
+            analyze_disabled = not st.session_state.receipts
             if st.button("解析開始", type="primary", use_container_width=True, disabled=analyze_disabled):
-                image_path = ensure_image_loaded(uploaded_file)
                 with st.spinner("AIで解析しています..."):
-                    st.session_state.analysis_result = run_ai_processing(str(image_path))
+                    for receipt in st.session_state.receipts:
+                        result = run_ai_processing(receipt["original_image_path"])
+                        receipt["analysis_result"] = result
+                        receipt["detection_image_path"] = result.get("detection_image_path", "")
+                    st.session_state.analysis_result = st.session_state.receipts[0]["analysis_result"]
                 st.session_state.current_step = 2
                 st.rerun()
 
     with right_column:
-        with st.container(border=True):
+        with st.container(border=True, key="page_1_preview_card"):
             st.markdown("<div class='panel-title'>アップロード画像</div>", unsafe_allow_html=True)
 
-            if uploaded_file is not None:
-                image_path = ensure_image_loaded(uploaded_file)
-                render_preview_image(image_path, "アップロード画像")
+            if st.session_state.receipts:
+                image_path = Path(st.session_state.receipts[0]["original_image_path"])
+                _, preview_column, _ = st.columns([1.0, 2.0, 1.0])
+                with preview_column:
+                    render_preview_image(image_path, "")
             elif st.session_state.current_image_path:
                 image_path = Path(st.session_state.current_image_path)
                 if image_path.exists():
-                    render_preview_image(image_path, "アップロード画像")
+                    _, preview_column, _ = st.columns([1.0, 2.0, 1.0])
+                    with preview_column:
+                        render_preview_image(image_path, "")
                 else:
                     render_placeholder_preview()
             else:
@@ -610,9 +727,9 @@ def render_step_1() -> None:
 
 def render_step_2() -> None:
     # 2段階目: 自動検出結果を表示する
-    analysis_result = st.session_state.analysis_result
+    receipts = st.session_state.receipts
 
-    if not analysis_result:
+    if not receipts:
         st.info("先にレシート画像をアップロードして解析してください。")
         return
 
@@ -628,11 +745,22 @@ def render_step_2() -> None:
                 unsafe_allow_html=True,
             )
 
-            render_readonly_field("日付", normalize_display_text(analysis_result.get("date", "")))
-            render_readonly_field("電話番号", normalize_display_text(analysis_result.get("phone", "")))
-            render_readonly_field("合計金額", get_amount_display(analysis_result), emphasis=True)
+            for index, receipt in enumerate(receipts, start=1):
+                result = receipt.get("analysis_result", {})
+                if not result:
+                    continue
+                receipt_id = receipt["id"]
+                receipt.setdefault("date", normalize_display_text(result.get("date", "")))
+                receipt.setdefault("phone", normalize_display_text(result.get("phone", "")))
+                receipt.setdefault("total", get_amount_display(result))
+                st.markdown(f"<div class='upload-file-row'>▧ 図{index}</div>", unsafe_allow_html=True)
+                receipt["date"] = st.text_input("日付", value=receipt["date"], key=f"{receipt_id}_date")
+                receipt["phone"] = st.text_input("電話番号", value=receipt["phone"], key=f"{receipt_id}_phone")
+                receipt["total"] = st.text_input("合計金額", value=receipt["total"], key=f"{receipt_id}_total")
 
-            if st.button("次へ", type="primary", use_container_width=True):
+            all_completed = all(bool(receipt.get("analysis_result")) for receipt in receipts)
+            if st.button("次へ", type="primary", use_container_width=True, disabled=not all_completed):
+                st.session_state.analysis_result = receipts[0]["analysis_result"]
                 st.session_state.current_step = 3
                 st.rerun()
 
@@ -646,17 +774,26 @@ def render_step_2() -> None:
                 unsafe_allow_html=True,
             )
 
-            annotated_path = str(analysis_result.get("annotated_image_path", "")).strip()
-            if annotated_path and Path(annotated_path).exists():
-                render_preview_image(Path(annotated_path), "検出画像")
-            else:
-                render_placeholder_preview()
+            for index, receipt in enumerate(receipts, start=1):
+                result = receipt.get("analysis_result", {})
+                annotated_path = str(result.get("annotated_image_path", "")).strip()
+                st.markdown(f"<div class='upload-file-row'>▧ 図{index}</div>", unsafe_allow_html=True)
+                if annotated_path and Path(annotated_path).exists():
+                    render_preview_image(Path(annotated_path), f"図{index}")
+                else:
+                    render_placeholder_preview()
+
+    if st.button("戻る", type="secondary", use_container_width=True, key="step_2_back"):
+        st.session_state.current_step = 1
+        st.rerun()
 
 
 def render_step_3() -> None:
     # 3段階目: 手入力情報を補完する
-    analysis_result = st.session_state.analysis_result
-    total_amount = get_amount_value(analysis_result)
+    receipts = st.session_state.receipts
+    if not receipts:
+        st.info("先にレシート画像をアップロードして解析してください。")
+        return
 
     with st.container(border=True):
         st.markdown("<div class='panel-title'>入力情報</div>", unsafe_allow_html=True)
@@ -667,35 +804,54 @@ def render_step_3() -> None:
             unsafe_allow_html=True,
         )
 
-        input_column, result_column = st.columns([1.15, 0.85], gap="large")
+        for index, receipt in enumerate(receipts, start=1):
+            result = receipt.get("analysis_result", {})
+            receipt_id = receipt["id"]
+            merchant_key = f"{receipt_id}_merchant"
+            tax_rate_key = f"{receipt_id}_tax_rate"
+            st.session_state.setdefault(merchant_key, receipt.get("merchant", ""))
+            st.session_state.setdefault(tax_rate_key, receipt.get("tax_rate", 10))
 
-        with input_column:
-            st.text_input(
-                "店舗名",
-                key="merchant_name",
-                placeholder="店舗名を入力してください",
-            )
-            st.selectbox(
-                "税率",
-                options=[8, 10],
-                key="tax_rate",
-                format_func=lambda value: f"{value}%",
-            )
+            input_column, result_column = st.columns([1.15, 0.85], gap="large")
+            with input_column:
+                st.markdown(f"<div class='upload-file-row'>▧ 図{index}</div>", unsafe_allow_html=True)
+                receipt["merchant"] = st.text_input(
+                    "店舗名",
+                    key=merchant_key,
+                    placeholder="店舗名を入力してください",
+                )
+                receipt["tax_rate"] = st.selectbox(
+                    "税率",
+                    options=[8, 10],
+                    key=tax_rate_key,
+                    format_func=lambda value: f"{value}%",
+                )
 
-        tax_amount = calculate_tax_amount(total_amount, int(st.session_state.tax_rate))
+            with input_column:
+                total_amount = get_receipt_total_value(receipt)
+                receipt["tax_amount"] = calculate_tax_amount(total_amount, int(receipt["tax_rate"]))
+                render_readonly_field("消費税額", format_tax_display(receipt["tax_amount"]), emphasis=True)
+                st.markdown(
+                    "<div class='panel-text'>"
+                    "消費税額は合計金額から自動計算されます。"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
 
-        with result_column:
-            render_readonly_field("消費税額", format_tax_display(tax_amount), emphasis=True)
-            st.markdown(
-                "<div class='panel-text'>"
-                "消費税額は合計金額から自動計算されます。"
-                "</div>",
-                unsafe_allow_html=True,
-            )
+            with result_column:
+                original_path = Path(str(receipt.get("original_image_path", "")))
+                if original_path.exists():
+                    st.image(original_path, caption=f"図{index}", width=150)
+                else:
+                    render_placeholder_preview()
 
         if st.button("次へ", type="primary", use_container_width=True):
             st.session_state.current_step = 4
             st.rerun()
+
+    if st.button("戻る", type="secondary", use_container_width=True, key="step_3_back"):
+        st.session_state.current_step = 2
+        st.rerun()
 
 
 def build_preview_dataframe(record: Dict[str, Any]) -> pd.DataFrame:
@@ -714,6 +870,29 @@ def build_preview_dataframe(record: Dict[str, Any]) -> pd.DataFrame:
         "画像パス": record["image_path"],
     }
     return pd.DataFrame([preview_row])
+
+
+def build_export_records() -> list[Dict[str, Any]]:
+    records = []
+    for index, receipt in enumerate(st.session_state.receipts, start=1):
+        amount_display = str(receipt.get("total", "")).strip()
+        amount_value = to_int_or_zero("".join(ch for ch in amount_display if ch.isdigit()))
+        tax_amount = int(receipt.get("tax_amount", 0))
+        records.append(
+            {
+                "id": index,
+                "date": str(receipt.get("date", "")).strip(),
+                "phone": str(receipt.get("phone", "")).strip(),
+                "merchant": str(receipt.get("merchant", "")).strip(),
+                "amount": amount_value,
+                "amount_value": amount_value,
+                "amount_display": amount_display,
+                "tax": tax_amount,
+                "tax_display": format_tax_display(tax_amount),
+                "image_path": str(receipt.get("original_image_path", "")),
+            }
+        )
+    return records
 
 
 def build_export_record() -> Dict[str, Any]:
@@ -744,8 +923,8 @@ def render_step_4() -> None:
         st.info("先にレシート画像をアップロードして解析してください。")
         return
 
-    record = build_export_record()
-    preview_df = build_preview_dataframe(record)
+    records = build_export_records() if st.session_state.receipts else [build_export_record()]
+    preview_df = pd.concat([build_preview_dataframe(record) for record in records], ignore_index=True)
 
     with st.container(border=True):
         st.markdown("<div class='panel-title'>確認・Excel出力</div>", unsafe_allow_html=True)
@@ -768,7 +947,7 @@ def render_step_4() -> None:
         with button_column_right:
             if st.button("Excel出力", type="primary", use_container_width=True):
                 try:
-                    output_path = export_to_excel(record, DEFAULT_OUTPUT_PATH)
+                    output_path = export_to_excel(records, DEFAULT_OUTPUT_PATH)
                     st.session_state.last_export_path = str(output_path)
                     st.success(f"Excelファイルを出力しました: {output_path}")
                 except Exception as exc:

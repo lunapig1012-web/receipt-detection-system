@@ -43,4 +43,21 @@ data/receipts/*
 .env
 .env.*
 .streamlit/secrets.toml
+*.pem
 *.key
+*.p12
+*.pfx
+
+# Backup files
+backup/
+backups/
+*.bak
+*.backup
+*.old
+*.tmp
+*~
+
+# Internal AI working files
+codex_instruction*
+codex_notes.md
+docs/UI_SPEC.md

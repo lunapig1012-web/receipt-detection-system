@@ -7,7 +7,7 @@ YOLO11n と EasyOCR を組み合わせ、日本語レシートの経費データ
 ## Demo
 
 <p align="center">
-  <img src="docs/assets/2026-08-17gif.gif" width="1000" alt="Streamlit demo">
+  <img src="docs/assets/2026-09-05.gif" width="1000" alt="Streamlit demo">
   <br>
   <em>Streamlit デモ</em>
 </p>
@@ -21,8 +21,9 @@ YOLO11n と EasyOCR を組み合わせ、日本語レシートの経費データ
 - YOLO bbox を利用した ROI ベースの OCR
 - EasyOCR による日本語・英語・数字の認識
 - OCR 候補からの最終支払金額の抽出と正規化
-- Streamlit による確認・手入力ワークフロー
-- 確認済みデータの Excel 出力とダウンロード
+- Streamlit による複数レシートのアップロード・順次処理
+- 日付・電話番号・合計金額を手動修正できる AI 検出結果の確認
+- 確認済みレシートの複数行 Excel 出力とダウンロード
 
 ---
 
@@ -56,7 +57,7 @@ YOLO11n はフィールド位置の検出だけを担当し、文字認識は行
 | 環境 | 役割 |
 |---|---|
 | ローカル環境 | アプリケーション開発、YOLO 推論、OCR、Streamlit、Excel 出力 |
-| Kaggle | GPU を使用した YOLO 学習記録と deployment evaluation |
+| Kaggle | GPU を使用した YOLO 学習と独立した test benchmark |
 
 正式なローカル推論モデルは `models/best.pt` です。Kaggle セッション内の一時的な学習出力パスは、ローカルのデプロイパスとして使用しません。
 
@@ -68,25 +69,26 @@ YOLO11n はフィールド位置の検出だけを担当し、文字認識は行
 
 | 項目 | 内容 |
 |---|---|
-| データ | 自己収集した日本語レシート |
 | 画像数 | 125 枚 |
 | 画像単位 | 1 画像につき 1 レシート |
-| Roboflow version | 3 |
+| Roboflow version | 4 |
 | Train | 100 枚 |
 | Validation | 12 枚 |
 | Test | 13 枚 |
+| Roboflow export resolution | 1024 × 1024（アスペクト比を維持して padding） |
+| アノテーション数 | date: 125、phone: 125、total: 122 |
 | クラス数 | 3 |
 | クラス順序 | `date`, `phone`, `total` |
-| データセット記載ライセンス | CC BY 4.0 |
+| データセット | 自作データセット（日本国内で収集したレシート画像） |
 
 対象レシートには、飲食店、スーパーマーケット、ドラッグストア、100 円ショップ、小売店が含まれます。
 
 ## YOLOモデル学習
 
-YOLO11n の学習は Kaggle GPU 環境で実施し、学習記録は次の notebook に保存しています。
+YOLO11n の学習は Kaggle GPU 環境で実施しています。次の notebook には学習・評価ワークフローを記録し、正式な評価結果は `docs/evaluation_results/` に別途保存しています。
 
 ```text
-docs/260810-receipts_detection_yolo11n_training.ipynb
+docs/260906-yolo11n-training-notebook-1024.ipynb
 ```
 
 主な学習設定:
@@ -94,74 +96,72 @@ docs/260810-receipts_detection_yolo11n_training.ipynb
 | 項目 | 設定 |
 |---|---:|
 | Base model | `yolo11n.pt` |
-| Training image size | 640 |
+| Training image size | 1024 |
 | Epochs | 300 |
 | Batch size | 8 |
 | Patience | 80 |
 | Mosaic | 0.2 |
+| Mixup / Cutmix | 0.0 / 0.0 |
+| Degrees / Shear / Perspective | 0.0 / 0.0 / 0.0 |
 | Translation | 0.05 |
 | Scale | 0.2 |
 | Horizontal flip | 0.0 |
 | Vertical flip | 0.0 |
 | Seed | 42 |
 
-保存された学習記録では、292 epoch で early stopping が実行され、best epoch は 212 です。
+現在の正式モデルの学習記録は `docs/training_results/yolo11n_1024/` に保存しています。現在のデプロイ設定は `deploy_config.json` で定義し、`imgsz=1024`、`conf_threshold=0.5` を使用します。
+
+保存された学習記録では、245 epoch で early stopping が実行され、best epoch は 165 です。
 
 ### YOLO Training Validation Metrics
 
-この指標は、モデル開発中に `validation` split を使用して確認した学習性能です。正式な deployment test evaluation の結果ではありません。
+この指標は、正式モデルの学習終了後に `validation` split で確認した結果です。独立した test benchmark とは区別します。
 
 評価条件:
 
 - Split: `validation`
-- Image size: `640`
+- Images / Instances: `12 / 36`
+- Image size: `1024`
 
 | 指標 | 値 |
 |---|---:|
-| Precision | 0.980 |
-| Recall | 0.957 |
-| mAP50 | 0.991 |
-| mAP50-95 | 0.703 |
+| Precision | 0.993 |
+| Recall | 1.000 |
+| mAP50 | 0.995 |
+| mAP50-95 | 0.731 |
 
-## Deployment Evaluation
+## Formal Test Benchmark
 
-この指標は、正式な `models/best.pt` を Kaggle Dataset としてマウントし、現在のデプロイ条件で `test` split を評価した結果です。前節の training validation metrics とは、データ split と評価設定が異なります。
+正式な `models/best.pt` のモデル性能を、独立した `test` split で評価した結果です。
 
 評価条件:
 
 - Environment: Kaggle
 - Split: `test`
+- Images / Instances: `13 / 38`
 - Image size: `1024`
-- Confidence threshold: `0.5`
+- Confidence: Ultralytics validation default（benchmark 評価では `conf` を指定しない）
 
 ### Overall Metrics
 
 | 指標 | 値 |
 |---|---:|
-| Precision | 0.953 |
-| Recall | 0.944 |
-| mAP50 | 0.962 |
-| mAP50-95 | 0.709 |
+| Precision | 0.9411 |
+| Recall | 0.9496 |
+| mAP50 | 0.9686 |
+| mAP50-95 | 0.6240 |
 
-### Per-class Metrics
-
-| Class | Precision | Recall | mAP50 | mAP50-95 |
-|---|---:|---:|---:|---:|
-| date | 0.899 | 0.917 | 0.901 | 0.698 |
-| phone | 0.989 | 1.000 | 0.995 | 0.736 |
-| total | 0.973 | 0.917 | 0.989 | 0.693 |
-
-評価に使用した `best.pt` の SHA256:
+評価対象の正式モデル `models/best.pt` の SHA256:
 
 ```text
-f8a443ac6654a9dfcff0863f3177139175a6bbefd0e9955c12220e9dd5cef369
+a450a8d56e6230e1e3ee598906a07815ea3b847f986d6af17a6c036629ed6ca4
 ```
 
-Evaluation artifact:
+評価ワークフローは `docs/260906-yolo11n-training-notebook-1024.ipynb`、評価図は `docs/evaluation_results/test_benchmark_1024/` に保存しています。
 
-```text
-docs/evaluation_results/test_1024_conf_0_5_evaluation_artifacts.zip
-```
+### Deployment Configuration
+
+アプリケーションでは `deploy_config.json` に従い、`imgsz=1024`、`conf_threshold=0.5` で低 confidence の予測を除外します。このアプリケーション用のしきい値は、上記 benchmark の評価条件とは別です。
 
 ---
 
@@ -221,13 +221,13 @@ amount_display = "¥2706"
 アプリケーション名は「レシートAI精算システム」です。
 
 1. **レシートアップロード**
-   レシート画像を選択し、「解析開始」を押します。
+   複数のレシート画像を選択し、「解析開始」を押すと、アップロード順に処理します。
 2. **AI 検出結果**
-   日付、電話番号、合計金額を読み取り専用で確認します。
+   複数のレシートについて YOLO の検出画像を確認し、日付、電話番号、合計金額を必要に応じて手動修正してから次のステップへ進みます。
 3. **入力情報**
-   店舗名を入力し、税率 `8%` または `10%` を選択します。
+   元のレシート画像を参照しながら、レシートごとに店舗名を入力し、税率 `8%` または `10%` を選択します。
 4. **確認・Excel 出力**
-   最終データを表で確認してから Excel を出力・ダウンロードします。
+   複数のレシートの最終データを表で確認してから、同じ順序の複数行データを Excel に出力・ダウンロードします。
 
 店舗名は自動抽出せず、ユーザーが入力します。消費税額は、検出した合計金額が税込であることを前提に、次の式で計算します。
 
@@ -235,7 +235,9 @@ amount_display = "¥2706"
 tax = total_amount * tax_rate / (100 + tax_rate)
 ```
 
-現在の UI は、1 回のワークフローで 1 枚のレシートを処理します。
+現在の UI は、1 回のワークフローで複数のレシートをアップロード順に処理します。
+
+ユーザーが修正した日付・電話番号・合計金額と、入力した店舗名・税情報はレシートごとに保持され、最終確認画面と Excel 出力には確認済みの値を使用します。AI 検出結果、入力情報、確認・Excel 出力の各画面から前の画面へ戻ることができ、戻った後も編集済みの値は保持されます。
 
 ### Excel 出力
 
@@ -283,7 +285,7 @@ output/excel/receipt_results.xlsx
 
 | 課題 | 対応 |
 |---|---|
-| 小さい文字領域の検出 | 学習時は `imgsz=640` を使用し、正式なローカル推論では `imgsz=1024` を使用する |
+| 小さい文字領域の検出 | データセットは 1024 × 1024 で出力し、学習・正式なローカル推論ともに `imgsz=1024` を使用する |
 | レシート全体 OCR によるノイズ | YOLO bbox から `date`、`phone`、`total` の ROI を切り出し、対象領域だけを OCR する |
 | 合計金額の認識エラー | `total` ROI の相対 padding、wide ROI、3 倍拡大、複数 OCR 試行、Amount Parser の正規化を使用する |
 | 学習環境と実行環境の混同 | Kaggle は学習記録と evaluation、ローカルはアプリケーション実行に分離し、推論設定を `deploy_config.json` に集約する |
@@ -295,7 +297,8 @@ output/excel/receipt_results.xlsx
 ### 動作環境
 
 - OS: Windows
-- Python: 3.10
+- ローカルアプリケーション環境: Python 3.10
+- 学習・評価環境: Kaggle notebook 環境
 
 ### 依存パッケージのインストール
 
@@ -347,12 +350,11 @@ streamlit run app/streamlit_app.py
 
 ## 現在の制限
 
-- データセットは 125 枚に限定されています。
-- 未知の店舗やレシート形式に対する一般化性能は未確認です。
-- 店舗名は自動抽出しません。
-- 税率と税額は OCR から自動抽出しません。
-- Streamlit は一度に 1 枚のレシートを処理します。
-- 日付、電話番号、合計金額は現在の UI では読み取り専用です。
+- データセットは 125 枚と小規模であり、テストセットも 13 枚に限定されています。
+- 未知の店舗や異なるレシートレイアウトに対する一般化性能は十分に検証できていません。
+- テストセットでは mAP@0.5 は 0.9686 ですが、mAP@0.5:0.95 は 0.6240 であり、より厳しい IoU 条件では Bounding Box の位置精度に改善余地があります。
+- 日付・電話番号・合計金額に類似した文字列による Background False Positive が一部確認されています。
+- 店舗名は自動抽出せず、税率・税額も OCR から自動抽出していません。
 - UI は低 confidence の検出結果を個別に警告しません。
 - `requirements.txt` の依存バージョンは固定されていません。
 - 自動化された Streamlit end-to-end テストはありません。
@@ -361,8 +363,18 @@ streamlit run app/streamlit_app.py
 
 ## Future Work
 
-- レシートテンプレートの追加
-- 画像前処理の改善
+### モデル・データ改善
+
+- レシート画像と店舗・レイアウトの種類を増やし、学習データの多様性を向上させる
+- 未知店舗を含む評価データを拡充し、一般化性能をより厳密に検証する
+- 日付、電話番号、金額に類似する非対象領域を Hard Negative として追加し、False Positive を削減する
+- `total` クラスを中心に失敗例を分析し、Bounding Box の位置精度を改善する
+- アノテーションの一貫性を再確認し、特に `total` クラスのラベル品質を改善する
+- Validation データを用いて confidence threshold を評価し、Precision / Recall のバランスを最適化する
+- 画像前処理・Data Augmentation の効果を比較し、検出性能への影響を検証する
+
+### 機能拡張
+
 - 店舗名の自動抽出
 - 税情報の自動抽出
 - 経費カテゴリの自動分類

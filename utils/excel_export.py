@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping, Union
+from typing import Any, Mapping, Sequence, Union
 
 from openpyxl import Workbook
 
@@ -96,10 +96,19 @@ def _write_workbook(workbook: Workbook, output_file: Path) -> Path:
         return fallback_path
 
 
-def export_to_excel(receipt_data: Mapping[str, Any], output_path: Union[str, Path]) -> Path:
-    # 領収書1件分の情報をExcelファイルとして保存する
-    if not isinstance(receipt_data, Mapping):
-        raise TypeError("receipt_data must be a mapping")
+def export_to_excel(
+    receipt_data: Union[Mapping[str, Any], Sequence[Mapping[str, Any]]],
+    output_path: Union[str, Path],
+) -> Path:
+    # 領収書情報をExcelファイルとして保存する
+    if isinstance(receipt_data, Mapping):
+        records = [receipt_data]
+    elif isinstance(receipt_data, Sequence) and not isinstance(receipt_data, (str, bytes)):
+        records = list(receipt_data)
+        if not all(isinstance(record, Mapping) for record in records):
+            raise TypeError("receipt_data must contain mappings")
+    else:
+        raise TypeError("receipt_data must be a mapping or a sequence of mappings")
 
     output_file = _normalize_output_path(output_path)
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -109,17 +118,18 @@ def export_to_excel(receipt_data: Mapping[str, Any], output_path: Union[str, Pat
     worksheet.title = "Receipt Results"
 
     worksheet.append(EXCEL_HEADERS)
-    worksheet.append(
-        [
-            _get_cell_value(receipt_data, "id"),
-            _get_cell_value(receipt_data, "date"),
-            _get_cell_value(receipt_data, "phone"),
-            _get_cell_value(receipt_data, "merchant"),
-            _get_cell_value(receipt_data, "amount"),
-            _get_cell_value(receipt_data, "tax"),
-            _get_cell_value(receipt_data, "image_path"),
-        ]
-    )
+    for record in records:
+        worksheet.append(
+            [
+                _get_cell_value(record, "id"),
+                _get_cell_value(record, "date"),
+                _get_cell_value(record, "phone"),
+                _get_cell_value(record, "merchant"),
+                _get_cell_value(record, "amount"),
+                _get_cell_value(record, "tax"),
+                _get_cell_value(record, "image_path"),
+            ]
+        )
 
     return _write_workbook(workbook, output_file)
 
