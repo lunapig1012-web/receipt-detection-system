@@ -7,13 +7,13 @@ YOLO11n と EasyOCR を組み合わせ、日本語レシートの経費データ
 ## Demo
 
 <p align="center">
-  <img src="docs/assets/2026-09-05.gif" width="1000" alt="Streamlit demo">
+  <img src="docs/assets/2026-09-05.gif" width="600" alt="Streamlit demo">
   <br>
   <em>Streamlit デモ</em>
 </p>
 
 > [!NOTE]
-> Application: 未公開（ローカル実行のみ）
+> Application: [https://receipt-detection-system-publiclink.streamlit.app/](https://receipt-detection-system-publiclink.streamlit.app/)
 
 ## Features
 
@@ -130,6 +130,17 @@ docs/260906-yolo11n-training-notebook-1024.ipynb
 | mAP50 | 0.995 |
 | mAP50-95 | 0.731 |
 
+## Training Curves
+
+学習中の train / validation loss、および Precision、Recall、mAP の推移を示します。
+
+<p align="center">
+  <img src="docs/training_results/yolo11n_1024/results.png" width="300">
+</p>
+
+この結果から、学習初期に各 loss が大きく低下し、その後安定して収束していることが確認できます。  
+また、validation 側の loss も大きく発散しておらず、少なくとも本 validation split 上では明確な学習崩壊は確認されませんでした。
+
 ## Formal Test Benchmark
 
 正式な `models/best.pt` のモデル性能を、独立した `test` split で評価した結果です。
@@ -151,17 +162,37 @@ docs/260906-yolo11n-training-notebook-1024.ipynb
 | mAP50 | 0.9686 |
 | mAP50-95 | 0.6240 |
 
-評価対象の正式モデル `models/best.pt` の SHA256:
-
-```text
-a450a8d56e6230e1e3ee598906a07815ea3b847f986d6af17a6c036629ed6ca4
-```
-
-評価ワークフローは `docs/260906-yolo11n-training-notebook-1024.ipynb`、評価図は `docs/evaluation_results/test_benchmark_1024/` に保存しています。
-
 ### Deployment Configuration
 
 アプリケーションでは `deploy_config.json` に従い、`imgsz=1024`、`conf_threshold=0.5` で低 confidence の予測を除外します。このアプリケーション用のしきい値は、上記 benchmark の評価条件とは別です。
+
+### Benchmark Diagnostic Curves
+
+以下の曲線は、上記と同じ独立 `test` benchmark 実行時に生成された評価図です。
+
+#### Precision-Recall Curve
+
+<p align="center">
+  <img src="docs\evaluation_results\test_benchmark_1024\BoxPR_curve.png" width="300">
+</p>
+
+各クラスの AP@0.5 と Precision–Recall の関係を示します。
+overall mAP@0.5 は 0.969 で、上記 benchmark の mAP50 = 0.9686 と一致します。
+
+#### F1-Confidence Curve
+<p align="center">
+  <img src="docs/evaluation_results/test_benchmark_1024/BoxF1_curve.png" width="300">
+</p>
+
+confidence threshold の変化に対する F1 の推移を示します。
+本 test split では、overall F1 は confidence ≈ 0.617 付近で最大となっています。
+
+一方、normalized confusion matrix では、`total` クラスの一部が background として見逃されており、約 `8%` の false negative が確認できます。
+
+そのため、実際の Streamlit アプリケーションでは、より recall を重視する設定として `conf_threshold=0.5` を採用しています。  
+これは低 confidence の有効な候補を早い段階で除外せず、後段の OCR とルールベース処理に残すためです。
+
+つまり、benchmark 上の最適 F1 threshold と deployment threshold は目的が異なります。
 
 ---
 
