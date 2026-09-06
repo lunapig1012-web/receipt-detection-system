@@ -1,6 +1,9 @@
-streamlit
-ultralytics
-easyocr
-pandas
-openpyxl
-Pillow
+streamlit==1.60.0
+easyocr==1.7.2
+torch==2.13.0
+torchvision==0.28.0
+ultralytics-opencv-headless==8.4.142
+numpy==2.2.6
+pandas==2.3.3
+Pillow==12.3.0
+openpyxl==3.1.5
